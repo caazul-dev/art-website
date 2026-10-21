@@ -1,30 +1,50 @@
-import { Controller, Post, Body, UseGuards, Request, Get } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { MetaService } from '../meta/meta.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService, private metaService: MetaService) {}
+  constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  async register(@Body() body: { username: string; password: string }) {
-    return this.metaService.createMeta(body.username, body.password);
+  async register(
+    @Body() body: { username: string; password?: string },
+  ) {
+    if (!body.username) {
+      throw new BadRequestException('Username is required');
+    }
+    return this.authService.register(body.username, body.password);
   }
 
   @Post('login')
-  async login(@Body() body: { username: string; password: string }) {
-    const meta = await this.authService.validateMeta(body.username, body.password);
-    if (!meta) return { error: 'Invalid credentials' };
-    return this.authService.login(meta);
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() body: { username: string; password?: string }) {
+    const user = await this.authService.validateUser(
+      body.username,
+      body.password || '',
+    );
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    return this.authService.login(user);
   }
 
   @Post('logout')
-  async logout(@Body() body: { metaId: number }) {
-    return this.authService.logout(body.metaId);
+  @HttpCode(HttpStatus.OK)
+  async logout(@Body() body: { userId: number }) {
+    return this.authService.logout(body.userId);
   }
 
   @Post('refresh')
-  async refresh(@Body() body: { refreshToken: string }) {
-    return this.authService.refreshTokens(body.refreshToken);
+  @HttpCode(HttpStatus.OK)
+  async refresh(@Body() body: { userId: number; refreshToken: string }) {
+    return this.authService.refreshTokens(body.userId, body.refreshToken);
   }
 }

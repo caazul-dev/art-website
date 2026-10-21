@@ -32,4 +32,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   getPool() {
     return this.pool;
   }
+
+  async query<T = any>(sql: string, params?: any[]): Promise<T> {
+    const [results] = await this.pool.query(sql, params);
+    return results as unknown as T;
+  }
 }

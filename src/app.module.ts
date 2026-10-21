@@ -1,10 +1,17 @@
 import { Module } from '@nestjs/common';
-import { MetaModule } from './meta/meta.module';
-import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
-import { axiomModule } from './axiom/axiom.module';
+import { UsersModule } from './users/users.module';
+import { AuthModule } from './auth/auth.module';
+import { PostsModule } from './posts/posts.module';
+import { CommentsModule } from './comments/comments.module';
 
 @Module({
-  imports: [DatabaseModule, UsersModule, AuthModule, axiomModule],
+  imports: [
+    DatabaseModule,
+    UsersModule,
+    AuthModule,
+    PostsModule,
+    CommentsModule,
+  ],
 })
 export class AppModule {}

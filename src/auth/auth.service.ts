@@ -1,59 +1,85 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { MetaService } from '../meta/meta.service';
+import { UsersService, User } from '../users/users.service';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import * as jwt from 'jsonwebtoken';
 
 @Injectable()
 export class AuthService {
-  constructor(private metaService: MetaService, private jwtService: JwtService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+  ) {}
 
-  async validateMeta(username: string, pass: string) {
-    const meta = await this.metaService.findByUsername(username);
-    if (!meta) return null;
-    const valid = await bcrypt.compare(pass, meta.password);
-    if (valid) return { id: meta.id, username: meta.username, role: meta.role };
+  async register(username: string, password?: string) {
+    const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
+    
+    // 1. Create the user in the database
+    const newUser = await this.usersService.createUser(username, hashedPassword);
+
+    // 2. Automatically log them in and save the refresh token
+    return this.login(newUser);
+  }
+
+  async validateUser(
+    username: string,
+    pass: string,
+  ): Promise<Omit<User, 'password'> | null> {
+    const user = await this.usersService.findByUsername(username);
+    if (!user || !user.password) return null;
+
+    const isMatch = await bcrypt.compare(pass, user.password);
+    if (isMatch) {
+      const { password, ...result } = user;
+      return result;
+    }
     return null;
   }
 
-  async login(meta: { id: number; username: string; role: string }) {
-    const payload = { sub: meta.id, username: meta.username, role: meta.role };
+  async login(user: Omit<User, 'password'>) {
+    const payload = { sub: user.id, username: user.username };
     const accessToken = this.jwtService.sign(payload);
 
     const refreshToken = jwt.sign(
       payload,
       process.env.JWT_REFRESH_TOKEN_SECRET || 'refresh_secret',
-      { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d' } as jwt.SignOptions,
+      { expiresIn: (process.env.REFRESH_TOKEN_EXPIRES_IN || '7d') as any },
     );
 
-    await this.metaService.setRefreshToken(meta.id, refreshToken);
+    await this.usersService.updateRefreshToken(user.id, refreshToken);
 
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, user };
   }
 
-  async logout(metaId: number) {
-    await this.metaService.setRefreshToken(metaId, null);
-    return { ok: true };
+  async logout(userId: number) {
+    await this.usersService.updateRefreshToken(userId, null);
+    return { success: true };
   }
 
-  async refreshTokens(refreshToken: string) {
+  async refreshTokens(userId: number, refreshToken: string) {
     try {
-      const decoded: any = jwt.verify(refreshToken, process.env.JWT_REFRESH_TOKEN_SECRET || 'refresh_secret');
-      const meta = await this.metaService.findById(decoded.sub);
-      if (!meta) throw new UnauthorizedException('Invalid refresh token');
+      jwt.verify(
+        refreshToken,
+        process.env.JWT_REFRESH_TOKEN_SECRET || 'refresh_secret',
+      );
 
-      const found = await this.metaService.findByRefreshToken(refreshToken);
-      if (!found) throw new UnauthorizedException('Invalid refresh token (not found)');
+      const user = await this.usersService.findById(userId);
+      if (!user || user.refresh_token !== refreshToken) {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
 
-      const payload = { sub: found.id, username: found.username, role: found.role };
+      const payload = { sub: user.id, username: user.username };
       const accessToken = this.jwtService.sign(payload);
-      const newRefresh = jwt.sign(
+
+      const newRefreshToken = jwt.sign(
         payload,
         process.env.JWT_REFRESH_TOKEN_SECRET || 'refresh_secret',
-        { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d' } as jwt.SignOptions,
+        { expiresIn: (process.env.REFRESH_TOKEN_EXPIRES_IN || '7d') as any },
       );
-      await this.metaService.setRefreshToken(found.id, newRefresh);
-      return { accessToken, refreshToken: newRefresh };
+
+      await this.usersService.updateRefreshToken(user.id, newRefreshToken);
+
+      return { accessToken, refreshToken: newRefreshToken };
     } catch (err) {
       throw new UnauthorizedException('Could not refresh tokens');
     }
