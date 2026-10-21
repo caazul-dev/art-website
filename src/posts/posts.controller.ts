@@ -8,7 +8,8 @@ export class PostsController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  create(@Body() body: any, @Req() req) {
-    return this.postsService.create(body, req.user.id);
+  create(@Body() body: any, @Req() req: any) {
+    // Call createPost to match the method name in PostsService
+    return this.postsService.createPost(req.user.id, body.title, body.content);
   }
 }
